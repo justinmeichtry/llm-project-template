@@ -40,17 +40,21 @@
 
 The template defaults to a **Codex `repo-locked` permission profile** and interactive Claude Code permissions. A *permission profile* describes what commands may access; **Microsoft Execution Containers (MXC)** is a separate host-side Windows sandbox backend. The template does not install or provision MXC.
 
+**Recommended for frequent use:** install the same `repo-locked` profile once in your **user-level** `~/.codex/config.toml` and select MXC on the Windows host. This gives every new repo a safe baseline **even before its project config is trusted**. Trust only repositories whose project-local settings you deliberately want to load; global profile enforcement and project-config trust are different controls.
+
+See [Agent security guide](docs/AGENT_SECURITY.md#one-time-global-codex-baseline-recommended) for a copyable global baseline, avoiding duplicate TOML sections, and a per-project trust decision.
+
 On a compatible Windows 11 host with Codex CLI 0.162.0+ and MXC:
 
 ```powershell
-# Run in the repo after you have trusted it locally and verified MXC
+# Run in the repo; project config is optional when global baseline is installed
 codex -c windows.sandbox=mxc
 
-# Check /status for Profile repo-locked
+# Confirm /status shows Profile repo-locked (workspace, never)
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-agent-sandbox.ps1
 ```
 
-Read [Agent security guide](docs/AGENT_SECURITY.md) for permissions, local trust, testing, optional network checks, Windows/VDI limitations and enterprise governance. A newly cloned directory requires its own Codex trust decision; the smoke test stops on failed permitted operations instead of reporting misleading access denials. **Do not trust an unfamiliar repository before inspecting its configuration and code.**
+The smoke test stops on failed permitted operations instead of treating launch/config errors as security denials. **Do not automatically trust unfamiliar repositories or your entire home folder.**
 
 Claude Code: run `claude` from the project root after reading `.claude/settings.json`. Native Windows permissions do not provide MXC-equivalent OS isolation; stronger isolation requires a supported sandbox environment.
 

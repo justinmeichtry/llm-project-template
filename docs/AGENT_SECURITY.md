@@ -15,15 +15,55 @@ These restrictions apply to supported sandboxed commands. They **do not** restri
 
 **Compatibility:** Tested manually with Codex CLI `0.162.1`, MXC on Windows 11 build `26200.9457`. Other hosts must verify compatibility; enabling this project profile does not automatically turn on MXC everywhere. Do not mix the new permission profile configuration with legacy `sandbox_mode` settings.
 
+## One-time global Codex baseline (recommended)
+
+Codex treats user-level config and project-level config as separate layers. **Define the default least-privilege profile once globally**, so a new clone can run with that baseline even when its project-local `.codex/config.toml` is not yet trusted. Project trust still matters if Codex needs to load a repository's own settings, hooks or exec policies. This is safer and less tedious than auto-trusting every newly cloned repository.
+
+1. Back up `~/.codex/config.toml` and open it in a text editor.
+2. In its **top-level section**, before the first TOML table heading, set `default_permissions = "repo-locked"` and `approval_policy = "never"`. If either key already exists, **edit it** rather than duplicating it.
+3. If this is a **verified MXC-compatible Windows host**, configure `[windows] sandbox = "mxc"` in the appropriate Windows table to require MXC. An explicitly selected MXC backend should fail instead of silently falling back. On unverified VDI/SMB setups use `codex -c windows.sandbox=mxc` for targeted trials first.
+4. Add these three `[permissions.repo-locked...]` tables **once** to the user configuration, or merge their keys if already present:
+
+```toml
+# These two keys go at the TOML root (before any [table]):
+default_permissions = "repo-locked"
+approval_policy = "never"
+
+# Windows only, and only after proving native MXC works:
+[windows]
+sandbox = "mxc"
+
+[permissions.repo-locked]
+description = "Limit sandboxed commands to the active workspace"
+extends = ":workspace"
+
+[permissions.repo-locked.filesystem]
+":root" = "deny"
+":minimal" = "read"
+":tmpdir" = "deny"
+":slash_tmp" = "deny"
+
+[permissions.repo-locked.network]
+enabled = false
+```
+
+**Do not paste the entire block unchanged into an existing config** containing `[windows]` or `[permissions.repo-locked]` tables: TOML duplicate tables/keys break startup. Also remove or reconcile legacy `sandbox_mode` and `sandbox_workspace_write` settings; those select a different permission system. The block above is an example of the *effective merged settings*, not an installer.
+
+After saving, open a new shell and run `codex` **from inside a single repository**, then check `/status` shows `repo-locked`. The `:workspace` policy is relative to the active workspace; starting from a broad directory such as `C:\Users\you` can give a correspondingly broad writable workspace. Prefer `codex -C "<repo-path>"`.
+
+The template keeps a matching project-level `.codex/config.toml` for portability and explicit exceptions. For a new clone with no exceptions, **the global baseline is sufficient**; you do not need to automatically trust the cloned folder. If the project needs its own custom profile or tool settings, inspect the repository and *then* explicitly trust that exact path through Codex's prompt or `[projects.'<absolute-repo-path>'] trust_level = "trusted"` in the user config. A trust decision allows the repository's configuration to load; **it does not by itself grant additional filesystem rights**, though a trusted project config can request broader settings unless managed requirements prohibit them.
+
+Do not try to solve onboarding by trusting the whole Desktop, user home, or fileserver. There is no guaranteed recursive trust wildcard for every future Git clone; path-specific project trust is intentional. In a company use IT-managed permissions/requirements to enforce maximum rights regardless of writable repository config.
+
 ### Configure and test on Windows
 
 1. Install a compatible Codex CLI and update Windows. Ensure the native MXC backend works on the host.
-2. Mark **only repositories you trust** as trusted in your personal `~/.codex/config.toml`; this is machine/user state, not repository content. Avoid committing machine-specific absolute paths.
+2. Prefer the one-time global `repo-locked` baseline above. For project-specific config features, inspect and trust only the individual repository (never an entire parent directory). User-level machine paths and trust entries do not belong in Git.
 3. Set the MXC backend for a session with `codex -c windows.sandbox=mxc` (or configure a verified global preference). Verify `/status` reports `Profile repo-locked` and the expected approval mode.
 4. Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-agent-sandbox.ps1` from the project root. Add `-TestNetwork` only if a functional outside network baseline is available.
 5. The `codex sandbox` diagnostic subcommand requires the explicit `--permission-profile repo-locked`, even though interactive Codex can pick up `default_permissions` from the trusted project configuration.
 
-Test script first launches a harmless MXC command and **requires** permitted read/write operations to succeed. Only then does it evaluate negative file tests, requiring an explicit OS access-denied message. It deletes its own uniquely named probe files and directories. Config failures, untrusted repositories and launcher errors fail closed rather than producing false PASS results. If the script fails immediately, check the output and explicitly trust the **new clone's own absolute path** in your personal Codex configuration; trust is not inherited between different clones.
+Test script first launches a harmless MXC command and **requires** permitted read/write operations to succeed. Only then does it evaluate negative file tests, requiring an explicit OS access-denied message. It deletes its own uniquely named probe files and directories. Config failures and launcher errors fail closed rather than producing false PASS results. If the script cannot load `repo-locked`, configure the global baseline or explicitly trust the new clone; separate clones do not inherit a prior project trust entry.
 
 ## Claude Code
 
