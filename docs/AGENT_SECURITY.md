@@ -1,5 +1,7 @@
 # Agent security: Codex, MXC, and Claude Code
 
+> **Current scope (October 2026): Codex CLI only.** Microsoft Execution Containers (MXC) are configured and tested here **only for OpenAI Codex CLI**, not for Claude Code, Claude CLI, the Claude–Codex orchestrator or arbitrary external processes. The checked-in `.claude/settings.json` contains Claude tool permission preferences but **does not establish MXC isolation or equivalent OS-level sandboxing**. Treat Claude's process-level isolation as a separate, unimplemented integration requiring independent setup and negative tests.
+
 ## Purpose and separation of responsibility
 
 - **MXC** is an OS-backed execution environment on a compatible Windows host. It is not installed into a repository or on a file server serving source files.
@@ -14,6 +16,48 @@ Every new repository copied from this template includes `.codex/config.toml` wit
 These restrictions apply to supported sandboxed commands. They **do not** restrict model API calls, web-search services, cloud tools, external MCP servers, or all other integrations by themselves. A custom Python runtime may require narrowly scoped additional read access and a project-local temp folder. Never grant an entire company drive for convenience.
 
 **Compatibility:** Tested manually with Codex CLI `0.162.1`, MXC on Windows 11 build `26200.9457`. Other hosts must verify compatibility; enabling this project profile does not automatically turn on MXC everywhere. Do not mix the new permission profile configuration with legacy `sandbox_mode` settings.
+
+## Effective rights and the approval boundary
+
+With `repo-locked` active in an MXC-backed Codex session, sandboxed commands can read/write in the selected workspace and read minimal runtime files. Outside reads/writes and direct sandboxed outbound network access are denied, subject to sandbox support. The `:workspace` parent profile also protects internal metadata paths such as `.git` and `.codex` from ordinary writes. A writable workspace can still include secrets or destructive operations; the profile does not require per-file confirmations.
+
+- `approval_policy = "never"`: run **allowed** commands without approval prompts, and do not offer escalation to bypass the sandbox for blocked commands.
+- `approval_policy = "on-request"`: ask for approval when an applicable workflow requests escalation; **does not mean every command or every file edit asks first**. Approved escalations can operate beyond the normal boundary.
+- `:danger-full-access`: built-in **unsandboxed full access**; not compatible with the goal of a hard MXC repository boundary. Do not use as the default or assume prompts are a substitute for sandbox enforcement.
+
+The local sandbox does not automatically constrain model service requests, web search, browser/Computer Use, external integrations or MCP servers. These require separate permissions and audit controls.
+
+## Deliberately extend access to other paths
+
+Prefer a **different named profile** rather than weakening `repo-locked`. Merge the following into `~/.codex/config.toml`, replacing example paths and not duplicating TOML tables:
+
+```toml
+[permissions.repo-extended]
+description = "Repository plus approved reference files"
+extends = "repo-locked"
+
+[permissions.repo-extended.filesystem]
+'C:\Users\justi\Documents\Research' = "read"
+'C:\Users\justi\Desktop\shared-data\schema.json' = "read"
+# Grant "write" to a specific directory only when modifications are intended:
+# 'C:\Users\justi\Desktop\shared-output' = "write"
+```
+
+Start only the relevant session with:
+
+```powershell
+codex -C "C:\path\to\your\repository" -c windows.sandbox=mxc -c 'default_permissions="repo-extended"'
+```
+
+An explicit `read` means file reads and directory listing; `write` includes reading, creating, changing and deleting items the OS identity may access; `deny` blocks both. Windows absolute paths/UNC paths are supported in permission rules, but do not assume a configured exception works on MXC before positive and negative tests. Avoid broad home directories, network drives and credentials paths.
+
+For an approval-based task, override **the approval policy for that session** using `-c 'approval_policy="on-request"'` (or choose a supported policy in `/permissions`). This permits an approval request, not a guaranteed per-command prompt, and can allow deliberately approved activity beyond the normal sandbox. With `never`, rejected access is not offered as an escalation.
+
+## Troubleshoot global TOML before testing MXC
+
+If Codex reports `key with no value, expected =` and shows `1 | m`, the **user config is syntactically invalid**. Inspect `C:\Users\justi\.codex\config.toml` from the top, remove the stray text, and check root-level keys occur before any `[table]` header. Do not paste Markdown fences or bare words into a TOML file. Back up first, preserve unrelated account/model settings, and never create duplicate `[features]`, `[windows]` or `[permissions.*]` sections.
+
+`codex --version` does **not** confirm TOML parsing. Re-run a harmless `codex ... sandbox --permission-profile repo-locked -- cmd.exe /d /c echo CONFIG_OK` to validate effective configuration before claiming the sandbox works.
 
 ## One-time global Codex baseline (recommended)
 
