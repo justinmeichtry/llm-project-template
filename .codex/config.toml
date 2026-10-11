@@ -1,0 +1,22 @@
+# Project-level Codex permission profile.
+# Validated with Codex CLI 0.162.1 + MXC on Windows 11 25H2.
+# MXC is selected by the host/CLI; this file is not an MXC installation.
+# Codex must trust this repository to load this file.
+# Recommended: define the same safe baseline once in ~/.codex/config.toml
+# so new clones remain restricted even before their project config loads.
+# Do not combine with legacy sandbox_mode / sandbox_workspace_write.
+default_permissions = "repo-locked"
+approval_policy = "never"
+
+[permissions.repo-locked]
+description = "Read/write this repository; deny other local files and network from sandboxed commands."
+extends = ":workspace"
+
+[permissions.repo-locked.filesystem]
+":root" = "deny"
+":minimal" = "read"
+":tmpdir" = "deny"
+":slash_tmp" = "deny"
+
+[permissions.repo-locked.network]
+enabled = false

@@ -208,6 +208,17 @@ foreach ($file in $additionalFiles) {
     }
 }
 
+
+# Security settings are repository files and need no per-user path substitution.
+# Do not auto-trust a cloned repository or modify user-level Codex/Claude settings.
+$agentSecurityFiles = @(".codex\config.toml", ".claude\settings.json")
+foreach ($relativePath in $agentSecurityFiles) {
+    $securityFile = Join-Path $repoRoot $relativePath
+    if (-not (Test-Path -LiteralPath $securityFile)) {
+        Write-Warning ("Agent security configuration missing: " + $relativePath)
+    }
+}
+
 # Create local runtime structure.
 $collabDir = Join-Path $repoRoot ".collab"
 $sessionsDir = Join-Path $collabDir "sessions"
@@ -266,4 +277,5 @@ Write-Host "  3. Add project-specific rules if needed"
 Write-Host "  4. Start implementing under src\"
 Write-Host "  5. Add tests under tests\"
 Write-Host ""
+Write-Host "Review docs\AGENT_SECURITY.md and verify your sandbox before coding."
 Write-Host "No commit or push was performed."
