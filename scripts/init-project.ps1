@@ -209,8 +209,8 @@ foreach ($file in $additionalFiles) {
 }
 
 
-// Security settings are repository files and need no per-user path substitution.
-// Do not auto-trust a cloned repository or modify user-level Codex/Claude settings.
+# Security settings are repository files and need no per-user path substitution.
+# Do not auto-trust a cloned repository or modify user-level Codex/Claude settings.
 $agentSecurityFiles = @(".codex\config.toml", ".claude\settings.json")
 foreach ($relativePath in $agentSecurityFiles) {
     $securityFile = Join-Path $repoRoot $relativePath

@@ -50,7 +50,7 @@ codex -c windows.sandbox=mxc
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-agent-sandbox.ps1
 ```
 
-Read [Agent security guide](docs/AGENT_SECURITY.md) for permissions, local trust, testing, optional network checks, Windows/VDI limitations and enterprise governance. **Do not trust an unfamiliar repository before inspecting its configuration and code.**
+Read [Agent security guide](docs/AGENT_SECURITY.md) for permissions, local trust, testing, optional network checks, Windows/VDI limitations and enterprise governance. A newly cloned directory requires its own Codex trust decision; the smoke test stops on failed permitted operations instead of reporting misleading access denials. **Do not trust an unfamiliar repository before inspecting its configuration and code.**
 
 Claude Code: run `claude` from the project root after reading `.claude/settings.json`. Native Windows permissions do not provide MXC-equivalent OS isolation; stronger isolation requires a supported sandbox environment.
 

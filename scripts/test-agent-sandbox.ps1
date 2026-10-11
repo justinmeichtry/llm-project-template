@@ -6,6 +6,7 @@
     Run on a Windows host with Codex >= 0.162.0 and a working MXC backend.
     Tests sandboxed shell commands, not all agent tools or external MCP servers.
     Creates uniquely named disposable probes and deletes only those probes.
+    Fails closed on project-trust/config/startup or permitted-operation errors.
     A network test is optional and inconclusive unless an outside baseline works.
 .EXAMPLE
     .\scripts\test-agent-sandbox.ps1
@@ -42,14 +43,36 @@ function Invoke-Mxc {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $output = & $codexExe -c "windows.sandbox=mxc" sandbox --cd $root --permission-profile repo-locked -- @Command 2>&1 | Out-String
+        # Capture exit code BEFORE post-processing output.
+        $rawOutput = & $codexExe -c "windows.sandbox=mxc" sandbox --cd $root --permission-profile repo-locked -- @Command 2>&1
+        $code = $LASTEXITCODE
         return [pscustomobject]@{
-            ExitCode = $LASTEXITCODE
-            Output = [string]$output
+            ExitCode = $code
+            Output = (($rawOutput | Out-String).Trim())
         }
     } finally {
         $ErrorActionPreference = $previous
     }
+}
+
+function Assert-UsableResult {
+    param(
+        [Parameter(Mandatory=$true)][psobject]$Result,
+        [Parameter(Mandatory=$true)][string]$TestName
+    )
+    if ($Result.ExitCode -ne 0) {
+        Write-Host ("[FAIL] " + $TestName + " - exit=" + $Result.ExitCode) -ForegroundColor Red
+        Write-Host ("Command output: " + $Result.Output)
+        throw "Sandbox did not execute a permitted command. Check trust in ~/.codex/config.toml ([projects.'<full repo path>'] trust_level = 'trusted'), project profile, and MXC. Negative tests were NOT evaluated."
+    }
+}
+
+function Test-ExplicitDenial {
+    param([Parameter(Mandatory=$true)][psobject]$Result)
+    # Do not treat a missing/invalid profile or a failed launcher as a sandbox denial.
+    return ($Result.ExitCode -ne 0) -and
+        ($Result.Output -match '(?i)(Zugriff verweigert|Access is denied|Permission denied|Operation not permitted|Access denied)') -and
+        ($Result.Output -notmatch '(?i)(default_permissions|failed to load config|unknown permission profile|required arguments|unexpected argument)')
 }
 
 $checks = New-Object System.Collections.Generic.List[object]
@@ -77,21 +100,44 @@ try {
     Write-Host ("Codex: {0}" -f $versionOutput)
     Write-Host "Sandbox: MXC; permission profile: repo-locked"
 
-    $r = Invoke-Mxc -Command @("cmd.exe","/d","/c",'type "' + (Join-Path $root "AGENTS.md") + '"')
-    Add-Check "Read inside repository" ($r.ExitCode -eq 0 -and $r.Output.Contains("# Agent Instructions")) ("exit=" + $r.ExitCode)
+    # A launch/config error can return exit=1 for ALL commands. Never count it as a denial.
+    $r = Invoke-Mxc -Command @("cmd.exe", "/d", "/c", "echo MXC_PROFILE_READY")
+    Assert-UsableResult -Result $r -TestName "MXC profile preflight"
+    if ($r.Output -notmatch "MXC_PROFILE_READY") {
+        throw "MXC preflight returned success without the expected marker: $($r.Output)"
+    }
+    Write-Host "[PASS] MXC profile preflight - shell command executed"
 
-    $r = Invoke-Mxc -Command @("cmd.exe","/d","/c",'echo MXC_INSIDE_OK > "' + $insideFile + '"')
+    # The first file-system check must succeed before any negative test is counted.
+    $insideReadCommand = 'type "' + (Join-Path $root "AGENTS.md") + '"'
+    $r = Invoke-Mxc -Command @("cmd.exe", "/d", "/c", $insideReadCommand)
+    Assert-UsableResult -Result $r -TestName "Read inside repository"
+    $readOk = $r.Output.Contains("# Agent Instructions")
+    Add-Check "Read inside repository" $readOk ("exit=" + $r.ExitCode)
+    if (-not $readOk) {
+        throw "Read inside repository did not return expected content: $($r.Output)"
+    }
+
+    $insideWriteCommand = 'echo MXC_INSIDE_OK > "' + $insideFile + '"'
+    $r = Invoke-Mxc -Command @("cmd.exe", "/d", "/c", $insideWriteCommand)
+    Assert-UsableResult -Result $r -TestName "Write inside repository"
     $insideOk = (Test-Path -LiteralPath $insideFile) -and ((Get-Content -LiteralPath $insideFile -Raw).Trim() -eq "MXC_INSIDE_OK")
-    Add-Check "Write inside repository" ($r.ExitCode -eq 0 -and $insideOk) ("exit=" + $r.ExitCode)
+    Add-Check "Write inside repository" $insideOk ("exit=" + $r.ExitCode)
+    if (-not $insideOk) {
+        throw "Sandbox reported success but did not produce the expected workspace file. Command output: $($r.Output)"
+    }
 
-    $r = Invoke-Mxc -Command @("cmd.exe","/d","/c",'type "' + $outsideRead + '"')
-    Add-Check "Deny read outside repository" ($r.ExitCode -ne 0 -and -not $r.Output.Contains("MXC_OUTSIDE_SECRET")) ("exit=" + $r.ExitCode)
+    $outsideReadCommand = 'type "' + $outsideRead + '"'
+    $r = Invoke-Mxc -Command @("cmd.exe", "/d", "/c", $outsideReadCommand)
+    Add-Check "Deny read outside repository" (Test-ExplicitDenial -Result $r) ("exit=" + $r.ExitCode + "; " + $r.Output)
 
-    $r = Invoke-Mxc -Command @("cmd.exe","/d","/c",'echo MXC_BAD_WRITE > "' + $outsideWrite + '"')
-    Add-Check "Deny write outside repository" ($r.ExitCode -ne 0 -and -not (Test-Path -LiteralPath $outsideWrite)) ("exit=" + $r.ExitCode)
+    $outsideWriteCommand = 'echo MXC_BAD_WRITE > "' + $outsideWrite + '"'
+    $r = Invoke-Mxc -Command @("cmd.exe", "/d", "/c", $outsideWriteCommand)
+    Add-Check "Deny write outside repository" ((Test-ExplicitDenial -Result $r) -and -not (Test-Path -LiteralPath $outsideWrite)) ("exit=" + $r.ExitCode + "; " + $r.Output)
 
-    $r = Invoke-Mxc -Command @("cmd.exe","/d","/c",'type "' + $siblingRead + '"')
-    Add-Check "Deny read in sibling directory" ($r.ExitCode -ne 0 -and -not $r.Output.Contains("MXC_SIBLING_SECRET")) ("exit=" + $r.ExitCode)
+    $siblingReadCommand = 'type "' + $siblingRead + '"'
+    $r = Invoke-Mxc -Command @("cmd.exe", "/d", "/c", $siblingReadCommand)
+    Add-Check "Deny read in sibling directory" (Test-ExplicitDenial -Result $r) ("exit=" + $r.ExitCode + "; " + $r.Output)
 
     if ($TestNetwork) {
         $previous = $ErrorActionPreference
@@ -104,7 +150,7 @@ try {
         }
         if ($normalCode -eq 0) {
             $r = Invoke-Mxc -Command @("curl.exe","--noproxy","*","-k","-I","--connect-timeout","5","--max-time","10","https://1.1.1.1")
-            Add-Check "Deny outgoing network from sandboxed command" ($r.ExitCode -ne 0) ("outside=0, sandbox=" + $r.ExitCode)
+            Add-Check "Network egress restriction indicated" ($r.ExitCode -ne 0 -and $r.Output -notmatch "(?i)(default_permissions|failed to load config|unknown permission profile)") ("outside=0, sandbox=" + $r.ExitCode + "; " + $r.Output)
         } else {
             Write-Host ("[SKIP] Network isolation: outside baseline failed (exit={0})" -f $normalCode)
         }

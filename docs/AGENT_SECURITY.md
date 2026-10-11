@@ -23,7 +23,7 @@ These restrictions apply to supported sandboxed commands. They **do not** restri
 4. Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-agent-sandbox.ps1` from the project root. Add `-TestNetwork` only if a functional outside network baseline is available.
 5. The `codex sandbox` diagnostic subcommand requires the explicit `--permission-profile repo-locked`, even though interactive Codex can pick up `default_permissions` from the trusted project configuration.
 
-Test script checks reading and writing inside the repository and rejection of reading/writing outside plus a sibling directory. It deletes only its own uniquely named probe files and directories. A failure before command execution (for example, TOML validation or unknown profile) is **not** a successful access-denial test.
+Test script first launches a harmless MXC command and **requires** permitted read/write operations to succeed. Only then does it evaluate negative file tests, requiring an explicit OS access-denied message. It deletes its own uniquely named probe files and directories. Config failures, untrusted repositories and launcher errors fail closed rather than producing false PASS results. If the script fails immediately, check the output and explicitly trust the **new clone's own absolute path** in your personal Codex configuration; trust is not inherited between different clones.
 
 ## Claude Code
 
