@@ -77,3 +77,11 @@ desktop.ini
 *.temp
 tmp/
 temp/
+
+# Claude local machine/user overrides (never commit)
+.claude/settings.local.json
+
+# Accidental/manual MXC probe artifacts
+mxc-inside-*.txt
+mxc-outside-*/
+mxc-sibling-*/

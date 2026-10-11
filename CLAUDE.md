@@ -20,3 +20,5 @@ Default safety:
 - run relevant tests,
 - do not commit or push unless explicitly requested,
 - do not access or modify files outside the project root without approval.
+
+Security: review `.claude/settings.json` and `docs/AGENT_SECURITY.md` before running commands. On native Windows, Claude Code permissions are not an OS-level sandbox; never treat them as equivalent to Codex+MXC.

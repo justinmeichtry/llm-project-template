@@ -53,3 +53,11 @@ Before finishing:
 - no secrets or local-only files were added,
 - documentation is updated if durable behavior changed,
 - final diff is reviewed.
+
+## Security and tool boundaries
+
+- Before executing generated code, check `docs/AGENT_SECURITY.md` and the effective sandbox profile.
+- For Codex, use the project `repo-locked` profile with a verified OS sandbox (MXC on compatible Windows) and confirm `/status`.
+- If the profile cannot load or MXC is unavailable, do not silently run with wider permissions.
+- A CLI tool's model API, MCP servers, and integrated tools may have permissions outside the local sandbox; do not assume they are confined.
+- Any cross-project access or network exception requires an explicit review and a reproducible negative test.
